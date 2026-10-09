@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arseno Arbres</title>
+  <link rel="icon" type="image/png" href="icone.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#f3f6f4; }
+    header { background:#173c36; color:white; padding:18px; text-align:center; }
+    header h1 { margin:0; font-size:25px; }
+    header p { margin:6px 0 0; }
+    main { padding:14px; max-width:1100px; margin:auto; }
+    #map { height:55vh; min-height:320px; border-radius:12px; }
+    .panel { background:white; padding:16px; margin-bottom:14px; border-radius:12px; }
+    input,button { padding:11px; margin:5px 0; box-sizing:border-box; }
+    input { width:100%; border:1px solid #bbb; border-radius:6px; }
+    button { background:#16734c; color:white; border:0; border-radius:6px; cursor:pointer; }
+    .tree { padding:10px; border-bottom:1px solid #ddd; }
+    .done { color:green; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🌳 ARSENO ARBRES</h1>
+    <p>Gestion des tournées d'arrosage</p>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Carte des arbres</h2>
+      <div id="map"></div>
+    </section>
+    <section class="panel">
+      <h2>Ajouter un arbre</h2>
+      <input id="name" placeholder="Nom ou numéro de l'arbre">
+      <input id="lat" type="number" step="any" placeholder="Latitude GPS">
+      <input id="lng" type="number" step="any" placeholder="Longitude GPS">
+      <button onclick="addTree()">Ajouter l'arbre</button>
+      <p>Astuce : clique sur la carte pour remplir les coordonnées.</p>
+    </section>
+    <section class="panel">
+      <h2>Liste des arbres</h2>
+      <p id="count"></p>
+      <div id="trees"></div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([46.5668,-72.7491],13);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{
+      attribution:'&copy; OpenStreetMap contributors',
+      maxZoom:19
+    }).addTo(map);
+
+    const key = 'arseno-arbres-v1';
+    let trees;
+    try {
+      trees = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!Array.isArray(trees)) trees = [];
+    } catch {
+      trees = [];
+    }
+    let markers = [];
+
+    map.on('click', e => {
+      document.getElementById('lat').value = e.latlng.lat.toFixed(6);
+      document.getElementById('lng').value = e.latlng.lng.toFixed(6);
+    });
+
+    function save() {
+      localStorage.setItem(key, JSON.stringify(trees));
+    }
+
+    function addTree() {
+      const name = document.getElementById('name').value.trim();
+      const latText = document.getElementById('lat').value;
+      const lngText = document.getElementById('lng').value;
+      const lat = Number(latText);
+      const lng = Number(lngText);
+
+      if (!name || !latText || !lngText ||
+          !Number.isFinite(lat) || !Number.isFinite(lng) ||
+          Math.abs(lat)>90 || Math.abs(lng)>180) {
+        alert('Entre un nom et des coordonnées GPS valides.');
+        return;
+      }
+
+      trees.push({id:Date.now() + Math.random(),name,lat,lng,done:false});
+      save();
+      render();
+      map.setView([lat,lng],17);
+      document.getElementById('name').value = '';
+    }
+
+   function toggleTree(id) {
+  const tree = trees.find(t => t.id === id);
+
+  if (tree) {
+    if (!Array.isArray(tree.history)) {
+      tree.history = [];
+    }
+
+    tree.history.push({
+      date: new Date().toISOString()
+    });
+
+    tree.done = true;
+    save();
+    render();
+
+    alert("Arrosage enregistré avec succès !");
+  }
+}
+function deleteTree(id) {
+  const tree = trees.find(t => t.id === id);
+
+  if (!tree) return;
+
+  const confirmation = confirm(
+    "Voulez-vous vraiment supprimer l'arbre " +
+    tree.name + " ?\n\n" +
+    "Son historique d'arrosage sera aussi supprimé."
+  );
+
+  if (confirmation) {
+    trees = trees.filter(t => t.id !== id);
+    save();
+    render();
+  }
+}
+    function render() {
+      markers.forEach(marker=>map.removeLayer(marker));
+      markers = [];
+      const list = document.getElementById('trees');
+      list.replaceChildren();
+
+      trees.forEach(tree=>{
+        const marker = L.circleMarker([tree.lat,tree.lng],{
+          radius:9,
+          color:tree.done?'#16803b':'#d97706',
+          fillOpacity:0.85
+        }).addTo(map).bindPopup(tree.name);
+        markers.push(marker);
+
+        const div = document.createElement('div');
+        div.className = 'tree';
+        const label = document.createElement('span');
+const history = Array.isArray(tree.history) ? tree.history : [];
+
+const lastWatering = history.length > 0
+  ? new Date(history[history.length - 1].date)
+      .toLocaleString('fr-CA')
+  : 'Jamais';
+
+label.textContent =
+  '🌳 ' + tree.name +
+  ' | Arrosages : ' + history.length +
+  ' | Dernier : ' + lastWatering + ' ';
+        const button = document.createElement('button');
+button.textContent = '💧 Enregistrer un arrosage';
+        button.onclick = ()=>toggleTree(tree.id);
+const deleteButton = document.createElement('button');
+
+deleteButton.textContent = '🗑️ Supprimer';
+deleteButton.style.background = '#c62828';
+deleteButton.style.marginLeft = '10px';
+
+deleteButton.onclick = () => deleteTree(tree.id);
+
+div.append(label, button, deleteButton);
+        list.appendChild(div);
+      });
+
+      document.getElementById('count').textContent =
+        trees.filter(t=>t.done).length + ' / ' +
+        trees.length + ' arbres arrosés';
+    }
+    render();
+  </script>
+</body>
+</html>
